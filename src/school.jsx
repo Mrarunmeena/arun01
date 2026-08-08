@@ -50,6 +50,28 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Users Database in LocalStorage
+  const [users, setUsers] = useState(() => {
+    const savedUsers = localStorage.getItem('nps_users');
+    return savedUsers ? JSON.parse(savedUsers) : [{ username: 'admin', password: 'admin123' }];
+  });
+
+  // Current Logged-in User State
+  const [currentUser, setCurrentUser] = useState(() => {
+    return localStorage.getItem('nps_current_user') || '';
+  });
+
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return localStorage.getItem('nps_is_logged_in') === 'true';
+  });
+
+  // Auth Modal States
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login'); // 'login' or 'signup'
+  const [authCredentials, setAuthCredentials] = useState({ username: '', password: '', confirmPassword: '' });
+  const [authError, setAuthError] = useState('');
+  const [authSuccess, setAuthSuccess] = useState('');
+
   // LocalStorage Persistence
   const [toppers, setToppers] = useState(() => {
     const saved = localStorage.getItem('nps_toppers');
@@ -87,10 +109,13 @@ export default function App() {
 
   const [teacherForm, setTeacherForm] = useState({ name: '', dept: '', salary: '' });
 
+  useEffect(() => { localStorage.setItem('nps_users', JSON.stringify(users)); }, [users]);
   useEffect(() => { localStorage.setItem('nps_toppers', JSON.stringify(toppers)); }, [toppers]);
   useEffect(() => { localStorage.setItem('nps_students', JSON.stringify(students)); }, [students]);
   useEffect(() => { localStorage.setItem('nps_teachers', JSON.stringify(teachers)); }, [teachers]);
   useEffect(() => { localStorage.setItem('nps_class_fees', JSON.stringify(classFees)); }, [classFees]);
+  useEffect(() => { localStorage.setItem('nps_is_logged_in', isLoggedIn); }, [isLoggedIn]);
+  useEffect(() => { localStorage.setItem('nps_current_user', currentUser); }, [currentUser]);
 
   useEffect(() => {
     const now = new Date();
@@ -99,8 +124,76 @@ export default function App() {
     setCurrentDayStr(days[now.getDay()]);
   }, []);
 
+  // Auth Submit Handler (Login & Signup)
+  const handleAuthSubmit = (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+
+    const trimmedUsername = authCredentials.username.trim();
+    const trimmedPassword = authCredentials.password.trim();
+
+    if (authMode === 'signup') {
+      if (trimmedUsername.length < 3) {
+        setAuthError('यूज़रनेम कम से कम 3 अक्षरों का होना चाहिए!');
+        return;
+      }
+      if (trimmedPassword.length < 4) {
+        setAuthError('पासवर्ड कम से कम 4 अक्षरों का होना चाहिए!');
+        return;
+      }
+      if (trimmedPassword !== authCredentials.confirmPassword.trim()) {
+        setAuthError('दोनों पासवर्ड मैच नहीं कर रहे हैं!');
+        return;
+      }
+
+      // Check if username exists
+      const userExists = users.some(u => u.username.toLowerCase() === trimmedUsername.toLowerCase());
+      if (userExists) {
+        setAuthError('यह यूजरनेम पहले से मौजूद है! कृपया कोई दूसरा नाम चुनें।');
+        return;
+      }
+
+      // Create new user
+      const updatedUsers = [...users, { username: trimmedUsername, password: trimmedPassword }];
+      setUsers(updatedUsers);
+      setAuthSuccess('अकाउंट सफलतापूर्वक बन गया! अब आप लॉग इन कर सकते हैं।');
+      setAuthMode('login');
+      setAuthCredentials({ username: trimmedUsername, password: '', confirmPassword: '' });
+
+    } else {
+      // Login logic
+      const validUser = users.find(
+        u => u.username.toLowerCase() === trimmedUsername.toLowerCase() && u.password === trimmedPassword
+      );
+
+      if (validUser) {
+        setIsLoggedIn(true);
+        setCurrentUser(validUser.username);
+        setShowAuthModal(false);
+        setAuthCredentials({ username: '', password: '', confirmPassword: '' });
+      } else {
+        setAuthError('गलत यूजरनेम या पासवर्ड!');
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    if (window.confirm("क्या आप लॉग आउट करना चाहते हैं?")) {
+      setIsLoggedIn(false);
+      setCurrentUser('');
+      localStorage.setItem('nps_is_logged_in', 'false');
+      localStorage.removeItem('nps_current_user');
+    }
+  };
+
   // Sync to Google Sheet
   const syncToGoogleSheet = async () => {
+    if (!isLoggedIn) {
+      alert("Google Sheet sync करने के लिए कृपया पहले लॉगिन करें!");
+      setShowAuthModal(true);
+      return;
+    }
     if (GOOGLE_SHEET_URL.includes("YOUR_SCRIPT_ID_HERE")) {
       alert("Kripya pehle App.js me apni Web App URL paste karein!");
       return;
@@ -129,6 +222,7 @@ export default function App() {
   // Handlers
   const handleAddStudent = (e) => {
     e.preventDefault();
+    if (!isLoggedIn) { alert("कृपया पहले साइन इन करें!"); setShowAuthModal(true); return; }
     setStudents([...students, {
       roll: parseInt(studentForm.roll),
       name: studentForm.name,
@@ -143,32 +237,38 @@ export default function App() {
   };
 
   const toggleFeeStatus = (idx) => {
+    if (!isLoggedIn) { alert("कृपया पहले साइन इन करें!"); setShowAuthModal(true); return; }
     const updated = [...students];
     updated[idx].feeStatus = updated[idx].feeStatus === 'Paid' ? 'Unpaid' : 'Paid';
     setStudents(updated);
   };
 
   const deleteStudent = (idx) => {
+    if (!isLoggedIn) { alert("कृपया पहले साइन इन करें!"); setShowAuthModal(true); return; }
     if (window.confirm("Remove student record?")) setStudents(students.filter((_, i) => i !== idx));
   };
 
   const handleAddTeacher = (e) => {
     e.preventDefault();
+    if (!isLoggedIn) { alert("कृपया पहले साइन इन करें!"); setShowAuthModal(true); return; }
     setTeachers([...teachers, { id: Date.now(), name: teacherForm.name, dept: teacherForm.dept, salary: parseFloat(teacherForm.salary), present: true }]);
     setTeacherForm({ name: '', dept: '', salary: '' });
   };
 
   const toggleTeacherAttendance = (idx) => {
+    if (!isLoggedIn) { alert("कृपया पहले साइन इन करें!"); setShowAuthModal(true); return; }
     const updated = [...teachers];
     updated[idx].present = !updated[idx].present;
     setTeachers(updated);
   };
 
   const deleteTeacher = (idx) => {
+    if (!isLoggedIn) { alert("कृपया पहले साइन इन करें!"); setShowAuthModal(true); return; }
     if (window.confirm("Remove faculty record?")) setTeachers(teachers.filter((_, i) => i !== idx));
   };
 
   const editTopper = (idx, field) => {
+    if (!isLoggedIn) { alert("कृपया पहले साइन इन करें!"); setShowAuthModal(true); return; }
     const newVal = window.prompt(`Edit ${field.toUpperCase()}:`, toppers[idx][field]);
     if (newVal !== null && newVal.trim() !== "") {
       const updated = [...toppers];
@@ -178,12 +278,19 @@ export default function App() {
   };
 
   const handleFeeChange = (className, val) => {
+    if (!isLoggedIn) { return; }
     setClassFees({ ...classFees, [className]: parseFloat(val) || 0 });
   };
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
-    setIsSidebarOpen(false); // Close sidebar on mobile after selecting tab
+    setIsSidebarOpen(false);
+  };
+
+  const sendWhatsAppResult = (student) => {
+    const msg = `Dear Parent, Result for ${student.name} (Class: ${student.class}, Roll: ${student.roll}): Score is ${student.percentage}. Fee Status: ${student.feeStatus}. - Nehru Public School`;
+    const encodedMsg = encodeURIComponent(msg);
+    window.open(`https://wa.me/91${student.mobile}?text=${encodedMsg}`, '_blank');
   };
 
   const totalProjected = students.reduce((acc, s) => acc + (classFees[s.class] || 0), 0);
@@ -212,7 +319,7 @@ export default function App() {
           position: relative;
         }
 
-        /* Overlay Entrance */
+        /* Overlay Entrance & Auth Modal */
         .info-overlay {
           position: fixed; top: 0; left: 0; width: 100%; height: 100%;
           background: radial-gradient(circle at center, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.98));
@@ -285,6 +392,19 @@ export default function App() {
           background: linear-gradient(90deg, rgba(217, 119, 6, 0.15), transparent);
           color: #fbbf24; border-color: rgba(217, 119, 6, 0.3); font-weight: 600;
         }
+
+        /* User Auth Badge in Sidebar */
+        .auth-badge-box {
+          background: rgba(15, 23, 42, 0.6);
+          border: 1px solid rgba(217, 119, 6, 0.3);
+          padding: 12px; border-radius: 8px; margin-top: 15px; text-align: center;
+        }
+        .btn-auth-action {
+          width: 100%; margin-top: 8px; padding: 6px 10px; font-size: 11px;
+          border-radius: 6px; font-weight: bold; cursor: pointer; border: none;
+        }
+        .btn-auth-in { background: #d97706; color: #fff; }
+        .btn-auth-out { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
 
         /* Main Container */
         .main-wrapper {
@@ -368,6 +488,15 @@ export default function App() {
           background: rgba(0, 0, 0, 0.6); z-index: 400; backdrop-filter: blur(3px);
         }
 
+        /* Auth Mode Switcher */
+        .auth-tab-btn {
+          background: transparent; border: none; color: #94a3b8; padding: 8px 16px;
+          font-weight: 600; font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent;
+        }
+        .auth-tab-btn.active {
+          color: #fbbf24; border-bottom: 2px solid #d97706;
+        }
+
         /* MEDIA QUERIES FOR MOBILE & TABLET */
         @media (max-width: 900px) {
           .mobile-header { display: flex; }
@@ -408,6 +537,98 @@ export default function App() {
         </div>
       )}
 
+      {/* SIGN IN / SIGN UP AUTH MODAL */}
+      {showAuthModal && (
+        <div className="info-overlay" style={{ zIndex: 10000 }}>
+          <div className="info-circular-box" style={{ maxWidth: '420px', textAlign: 'left' }}>
+            <button 
+              style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}
+              onClick={() => { setShowAuthModal(false); setAuthError(''); setAuthSuccess(''); }}
+            >
+              ✕
+            </button>
+            <div className="classic-crest" style={{ margin: '0 auto 10px' }}></div>
+            
+            {/* Modal Tabs for Login vs Signup */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+              <button 
+                className={`auth-tab-btn ${authMode === 'login' ? 'active' : ''}`}
+                onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
+              >
+                Log In
+              </button>
+              <button 
+                className={`auth-tab-btn ${authMode === 'signup' ? 'active' : ''}`}
+                onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccess(''); }}
+              >
+                Sign Up (Create Account)
+              </button>
+            </div>
+            
+            {authError && (
+              <div style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#f87171', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', marginBottom: '15px', textAlign: 'center' }}>
+                {authError}
+              </div>
+            )}
+
+            {authSuccess && (
+              <div style={{ background: 'rgba(34, 197, 94, 0.2)', border: '1px solid rgba(34, 197, 94, 0.4)', color: '#4ade80', padding: '8px 12px', borderRadius: '6px', fontSize: '11px', marginBottom: '15px', textAlign: 'center' }}>
+                {authSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleAuthSubmit}>
+              <div className="form-group">
+                <label>User ID / Username</label>
+                <input 
+                  type="text" 
+                  required 
+                  placeholder={authMode === 'login' ? "admin या आपका यूज़रनेम" : "नया यूज़रनेम लिखें"}
+                  value={authCredentials.username} 
+                  onChange={(e) => setAuthCredentials({ ...authCredentials, username: e.target.value })} 
+                />
+              </div>
+              
+              <div className="form-group">
+                <label>Password</label>
+                <input 
+                  type="password" 
+                  required 
+                  placeholder="पासवर्ड लिखें"
+                  value={authCredentials.password} 
+                  onChange={(e) => setAuthCredentials({ ...authCredentials, password: e.target.value })} 
+                />
+              </div>
+
+              {authMode === 'signup' && (
+                <div className="form-group">
+                  <label>Confirm Password</label>
+                  <input 
+                    type="password" 
+                    required 
+                    placeholder="पासवर्ड दोबारा लिखें"
+                    value={authCredentials.confirmPassword} 
+                    onChange={(e) => setAuthCredentials({ ...authCredentials, confirmPassword: e.target.value })} 
+                  />
+                </div>
+              )}
+
+              <button type="submit" className="btn-gold" style={{ marginTop: '10px' }}>
+                {authMode === 'login' ? 'Log In' : 'Create Account'}
+              </button>
+            </form>
+
+            <div style={{ marginTop: '15px', textAlign: 'center', fontSize: '11px', color: '#94a3b8' }}>
+              {authMode === 'login' ? (
+                <>नया अकाउंट बनाना चाहते हैं? <span style={{ color: '#fbbf24', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { setAuthMode('signup'); setAuthError(''); }}>Sign Up करें</span></>
+              ) : (
+                <>पहले से अकाउंट है? <span style={{ color: '#fbbf24', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log In करें</span></>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MOBILE BACKDROP */}
       <div className={`sidebar-backdrop ${isSidebarOpen ? 'open' : ''}`} onClick={() => setIsSidebarOpen(false)} />
 
@@ -418,6 +639,20 @@ export default function App() {
           <div className="sidebar-brand">
             <h2 className="serif-font">NEHRU PUBLIC</h2>
             <div className="est-tag">ESTABLISHED 2015</div>
+          </div>
+
+          {/* SIGN IN STATUS BADGE */}
+          <div className="auth-badge-box">
+            <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
+              Status: <span style={{ color: isLoggedIn ? '#4ade80' : '#f87171', fontWeight: 'bold' }}>
+                {isLoggedIn ? `● ${currentUser}` : '○ Signed Out'}
+              </span>
+            </div>
+            {isLoggedIn ? (
+              <button className="btn-auth-action btn-auth-out" onClick={handleLogout}>Sign Out</button>
+            ) : (
+              <button className="btn-auth-action btn-auth-in" onClick={() => { setShowAuthModal(true); setAuthMode('login'); }}>Sign In / Sign Up</button>
+            )}
           </div>
 
           <div className="nav-menu">
@@ -431,7 +666,7 @@ export default function App() {
         </div>
 
         <div style={{ fontSize: '10px', color: '#475569', textAlign: 'center', marginTop: '20px' }}>
-          ENTERPRISE V4.0 (RESPONSIVE)
+          ENTERPRISE V5.0 (DYNAMIC AUTH)
         </div>
       </div>
 
@@ -441,6 +676,11 @@ export default function App() {
         <div className="mobile-header">
           <button className="hamburger-btn" onClick={() => setIsSidebarOpen(true)}>☰</button>
           <div className="serif-font" style={{ color: '#fbbf24', fontWeight: 'bold' }}>NEHRU PUBLIC SCHOOL</div>
+          {isLoggedIn ? (
+            <button style={{ background: 'none', border: 'none', color: '#f87171', fontSize: '11px', fontWeight: 'bold' }} onClick={handleLogout}>Sign Out</button>
+          ) : (
+            <button style={{ background: '#d97706', border: 'none', color: '#fff', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }} onClick={() => { setShowAuthModal(true); setAuthMode('login'); }}>Sign In</button>
+          )}
         </div>
 
         {/* MAIN CONTENT */}
@@ -667,69 +907,76 @@ export default function App() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Student</th>
-                      <th>Class & Roll</th>
-                      <th>Marks</th>
-                      <th>Contact</th>
+                      <th>Roll</th>
+                      <th>Student Name</th>
+                      <th>Class</th>
+                      <th>Score</th>
+                      <th>Parent Mobile</th>
                       <th>Dispatch</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {students.map((s, idx) => {
-                      const msg = encodeURIComponent(`Dear Parent (${s.father}), Report Card for ${s.name} (${s.class}, Roll: ${s.roll}). Score: ${s.percentage}. Fees Status: ${s.feeStatus}. Nehru Public School.`);
-                      return (
-                        <tr key={idx}>
-                          <td><strong>{s.name}</strong></td>
-                          <td>{s.class} (#{s.roll})</td>
-                          <td><strong style={{ color: '#fbbf24' }}>{s.percentage}</strong></td>
-                          <td>{s.mobile}</td>
-                          <td>
-                            <a href={`https://wa.me/91${s.mobile}?text=${msg}`} target="_blank" rel="noopener noreferrer">
-                              <button className="btn-wa">💬 Send WA</button>
-                            </a>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {students.map((s, idx) => (
+                      <tr key={idx}>
+                        <td>#{s.roll}</td>
+                        <td><strong>{s.name}</strong></td>
+                        <td>{s.class}</td>
+                        <td><strong style={{ color: '#4ade80' }}>{s.percentage}</strong></td>
+                        <td>{s.mobile}</td>
+                        <td>
+                          <button className="btn-wa" onClick={() => sendWhatsAppResult(s)}>
+                            📲 Send WhatsApp
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* TAB 5: FINANCE */}
+          {/* TAB 5: FINANCE LEDGER */}
           {activeTab === 'finance' && (
             <div className="glass-box">
-              <h3>💰 Financial Reserve Overview</h3>
-              <div className="stats-grid" style={{ marginTop: '15px' }}>
+              <h3>💰 Financial Accounts Ledger</h3>
+              <div className="stats-grid" style={{ marginBottom: '20px' }}>
                 <div className="stat-card">
-                  <h4>Projected Fees</h4>
-                  <div className="val">₹{totalProjected.toLocaleString('en-IN')}</div>
-                </div>
-                <div className="stat-card">
-                  <h4>Collected Fees</h4>
+                  <h4>Total Tuition Fees Collected</h4>
                   <div className="val" style={{ color: '#4ade80' }}>₹{totalCollected.toLocaleString('en-IN')}</div>
                 </div>
                 <div className="stat-card">
-                  <h4>Faculty Payroll</h4>
+                  <h4>Total Faculty Salary Outflow</h4>
                   <div className="val" style={{ color: '#f87171' }}>₹{totalSalaries.toLocaleString('en-IN')}</div>
+                </div>
+                <div className="stat-card">
+                  <h4>Net Administrative Reserve</h4>
+                  <div className="val" style={{ color: netPL >= 0 ? '#4ade80' : '#f87171' }}>
+                    ₹{netPL.toLocaleString('en-IN')}
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 6: FEES STRUCTURE */}
+          {/* TAB 6: FEES CONFIGURATION */}
           {activeTab === 'fees' && (
             <div className="glass-box">
-              <h3>Class-wise Annual Fee Configuration</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginTop: '15px' }}>
-                {Object.keys(classFees).map((c) => (
-                  <div key={c} className="form-group" style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <label style={{ color: '#fbbf24' }}>{c}</label>
+              <h3>⚙️ Annual Fee Structure Configuration</h3>
+              {!isLoggedIn && (
+                <div style={{ color: '#f87171', fontSize: '12px', marginBottom: '15px' }}>
+                  ⚠️ फीस की जानकारी बदलने के लिए कृपया लॉगिन करें!
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                {Object.keys(classFees).map((cls) => (
+                  <div className="form-group" key={cls} style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <label>{cls}</label>
                     <input
                       type="number"
-                      value={classFees[c]}
-                      onChange={(e) => handleFeeChange(c, e.target.value)}
+                      disabled={!isLoggedIn}
+                      value={classFees[cls]}
+                      onChange={(e) => handleFeeChange(cls, e.target.value)}
                     />
                   </div>
                 ))}
