@@ -38,7 +38,6 @@ const defaultClassFees = {
   "Class 10th": 28000, "Class 11th": 32000, "Class 12th": 35000
 };
 
-// ⚠️ YAHAN APNI GOOGLE APPS SCRIPT KI WEB APP URL PASTE KAREIN
 const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID_HERE/exec";
 
 export default function App() {
@@ -50,29 +49,24 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Users Database in LocalStorage
+  // Users Database in LocalStorage (With Mobile Support)
   const [users, setUsers] = useState(() => {
     const savedUsers = localStorage.getItem('nps_users');
-    return savedUsers ? JSON.parse(savedUsers) : [{ username: 'admin', password: 'admin123' }];
+    return savedUsers ? JSON.parse(savedUsers) : [{ username: 'admin', password: 'admin123', mobile: '9876543210' }];
   });
 
-  // Current Logged-in User State
-  const [currentUser, setCurrentUser] = useState(() => {
-    return localStorage.getItem('nps_current_user') || '';
-  });
+  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('nps_current_user') || '');
+  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('nps_is_logged_in') === 'true');
 
-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    return localStorage.getItem('nps_is_logged_in') === 'true';
-  });
-
-  // Auth Modal States
+  // Auth Modal States: 'login' | 'signup' | 'forgot' | 'verify_otp'
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMode, setAuthMode] = useState('login'); // 'login' or 'signup'
-  const [authCredentials, setAuthCredentials] = useState({ username: '', password: '', confirmPassword: '' });
+  const [authMode, setAuthMode] = useState('login'); 
+  const [authCredentials, setAuthCredentials] = useState({ username: '', password: '', confirmPassword: '', mobile: '', otp: '', newPassword: '' });
+  const [generatedOtp, setGeneratedOtp] = useState(null);
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  // LocalStorage Persistence
+  // LocalStorage Data
   const [toppers, setToppers] = useState(() => {
     const saved = localStorage.getItem('nps_toppers');
     return saved ? JSON.parse(saved) : [
@@ -103,10 +97,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : defaultClassFees;
   });
 
-  const [studentForm, setStudentForm] = useState({
-    name: '', father: '', mobile: '', board: 'CBSE', class: 'Nursery', roll: '', percentage: '', feeStatus: 'Unpaid'
-  });
-
+  const [studentForm, setStudentForm] = useState({ name: '', father: '', mobile: '', board: 'CBSE', class: 'Nursery', roll: '', percentage: '', feeStatus: 'Unpaid' });
   const [teacherForm, setTeacherForm] = useState({ name: '', dept: '', salary: '' });
 
   useEffect(() => { localStorage.setItem('nps_users', JSON.stringify(users)); }, [users]);
@@ -124,6 +115,61 @@ export default function App() {
     setCurrentDayStr(days[now.getDay()]);
   }, []);
 
+  // Send OTP Function
+  const handleSendOtp = (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+
+    const targetUser = users.find(
+      u => u.username.toLowerCase() === authCredentials.username.trim().toLowerCase() && u.mobile === authCredentials.mobile.trim()
+    );
+
+    if (!targetUser) {
+      setAuthError('इस यूजरनेम और मोबाइल नंबर का कोई यूजर नहीं मिला!');
+      return;
+    }
+
+    // Generate 6 Digit Random OTP
+    const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(newOtp);
+
+    // Screen Notification for Demo OTP
+    alert(`📲 [OTP SENT]\nआपके नंबर (${authCredentials.mobile}) पर OTP भेजा गया है:\n\nOTP: ${newOtp}`);
+
+    setAuthSuccess(`OTP आपके मोबाइल नंबर ${authCredentials.mobile} पर भेज दिया गया है!`);
+    setAuthMode('verify_otp');
+  };
+
+  // Verify OTP and Reset Password
+  const handleResetPassword = (e) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (authCredentials.otp.trim() !== generatedOtp) {
+      setAuthError('गलत OTP! कृपया सही OTP दर्ज करें।');
+      return;
+    }
+
+    if (authCredentials.newPassword.trim().length < 4) {
+      setAuthError('नया पासवर्ड कम से कम 4 अक्षरों का होना चाहिए!');
+      return;
+    }
+
+    // Update Password in LocalStorage User List
+    const updatedUsers = users.map(u => {
+      if (u.username.toLowerCase() === authCredentials.username.trim().toLowerCase()) {
+        return { ...u, password: authCredentials.newPassword.trim() };
+      }
+      return u;
+    });
+
+    setUsers(updatedUsers);
+    setAuthSuccess('पासवर्ड सफलतापूर्वक बदल दिया गया है! अब नए पासवर्ड से लॉग इन करें।');
+    setAuthMode('login');
+    setAuthCredentials({ username: authCredentials.username, password: '', confirmPassword: '', mobile: '', otp: '', newPassword: '' });
+  };
+
   // Auth Submit Handler (Login & Signup)
   const handleAuthSubmit = (e) => {
     e.preventDefault();
@@ -132,37 +178,24 @@ export default function App() {
 
     const trimmedUsername = authCredentials.username.trim();
     const trimmedPassword = authCredentials.password.trim();
+    const trimmedMobile = authCredentials.mobile.trim();
 
     if (authMode === 'signup') {
-      if (trimmedUsername.length < 3) {
-        setAuthError('यूज़रनेम कम से कम 3 अक्षरों का होना चाहिए!');
-        return;
-      }
-      if (trimmedPassword.length < 4) {
-        setAuthError('पासवर्ड कम से कम 4 अक्षरों का होना चाहिए!');
-        return;
-      }
-      if (trimmedPassword !== authCredentials.confirmPassword.trim()) {
-        setAuthError('दोनों पासवर्ड मैच नहीं कर रहे हैं!');
-        return;
-      }
+      if (trimmedUsername.length < 3) { setAuthError('यूज़रनेम कम से कम 3 अक्षरों का होना चाहिए!'); return; }
+      if (trimmedMobile.length !== 10) { setAuthError('10 अंकों का मोबाइल नंबर डालें!'); return; }
+      if (trimmedPassword.length < 4) { setAuthError('पासवर्ड कम से कम 4 अक्षरों का होना चाहिए!'); return; }
+      if (trimmedPassword !== authCredentials.confirmPassword.trim()) { setAuthError('दोनों पासवर्ड मैच नहीं कर रहे हैं!'); return; }
 
-      // Check if username exists
       const userExists = users.some(u => u.username.toLowerCase() === trimmedUsername.toLowerCase());
-      if (userExists) {
-        setAuthError('यह यूजरनेम पहले से मौजूद है! कृपया कोई दूसरा नाम चुनें।');
-        return;
-      }
+      if (userExists) { setAuthError('यह यूजरनेम पहले से मौजूद है!'); return; }
 
-      // Create new user
-      const updatedUsers = [...users, { username: trimmedUsername, password: trimmedPassword }];
+      const updatedUsers = [...users, { username: trimmedUsername, password: trimmedPassword, mobile: trimmedMobile }];
       setUsers(updatedUsers);
-      setAuthSuccess('अकाउंट सफलतापूर्वक बन गया! अब आप लॉग इन कर सकते हैं।');
+      setAuthSuccess('अकाउंट बन गया! अब आप लॉग इन कर सकते हैं।');
       setAuthMode('login');
-      setAuthCredentials({ username: trimmedUsername, password: '', confirmPassword: '' });
+      setAuthCredentials({ username: trimmedUsername, password: '', confirmPassword: '', mobile: '', otp: '', newPassword: '' });
 
-    } else {
-      // Login logic
+    } else if (authMode === 'login') {
       const validUser = users.find(
         u => u.username.toLowerCase() === trimmedUsername.toLowerCase() && u.password === trimmedPassword
       );
@@ -171,7 +204,7 @@ export default function App() {
         setIsLoggedIn(true);
         setCurrentUser(validUser.username);
         setShowAuthModal(false);
-        setAuthCredentials({ username: '', password: '', confirmPassword: '' });
+        setAuthCredentials({ username: '', password: '', confirmPassword: '', mobile: '', otp: '', newPassword: '' });
       } else {
         setAuthError('गलत यूजरनेम या पासवर्ड!');
       }
@@ -187,17 +220,9 @@ export default function App() {
     }
   };
 
-  // Sync to Google Sheet
   const syncToGoogleSheet = async () => {
-    if (!isLoggedIn) {
-      alert("Google Sheet sync करने के लिए कृपया पहले लॉगिन करें!");
-      setShowAuthModal(true);
-      return;
-    }
-    if (GOOGLE_SHEET_URL.includes("YOUR_SCRIPT_ID_HERE")) {
-      alert("Kripya pehle App.js me apni Web App URL paste karein!");
-      return;
-    }
+    if (!isLoggedIn) { alert("कृपया पहले लॉगिन करें!"); setShowAuthModal(true); return; }
+    if (GOOGLE_SHEET_URL.includes("YOUR_SCRIPT_ID_HERE")) { alert("Google Web App URL अपडेट करें!"); return; }
 
     setIsSyncing(true);
     try {
@@ -205,33 +230,23 @@ export default function App() {
         method: "POST",
         mode: "no-cors",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "SYNC_ALL_STUDENTS",
-          students: students
-        })
+        body: JSON.stringify({ action: "SYNC_ALL_STUDENTS", students })
       });
       alert("✅ Data Google Sheet me successfully sync ho gaya!");
     } catch (err) {
-      console.error(err);
-      alert("❌ Sync karne me dikkat aayi.");
+      alert("❌ Sync karne me दिक्कत आई।");
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Handlers
   const handleAddStudent = (e) => {
     e.preventDefault();
     if (!isLoggedIn) { alert("कृपया पहले साइन इन करें!"); setShowAuthModal(true); return; }
     setStudents([...students, {
-      roll: parseInt(studentForm.roll),
-      name: studentForm.name,
-      father: studentForm.father,
-      mobile: studentForm.mobile,
-      board: studentForm.board,
-      class: studentForm.class,
-      percentage: studentForm.percentage || 'N/A',
-      feeStatus: studentForm.feeStatus
+      roll: parseInt(studentForm.roll), name: studentForm.name, father: studentForm.father,
+      mobile: studentForm.mobile, board: studentForm.board, class: studentForm.class,
+      percentage: studentForm.percentage || 'N/A', feeStatus: studentForm.feeStatus
     }]);
     setStudentForm({ name: '', father: '', mobile: '', board: 'CBSE', class: 'Nursery', roll: '', percentage: '', feeStatus: 'Unpaid' });
   };
@@ -278,7 +293,7 @@ export default function App() {
   };
 
   const handleFeeChange = (className, val) => {
-    if (!isLoggedIn) { return; }
+    if (!isLoggedIn) return;
     setClassFees({ ...classFees, [className]: parseFloat(val) || 0 });
   };
 
@@ -289,8 +304,7 @@ export default function App() {
 
   const sendWhatsAppResult = (student) => {
     const msg = `Dear Parent, Result for ${student.name} (Class: ${student.class}, Roll: ${student.roll}): Score is ${student.percentage}. Fee Status: ${student.feeStatus}. - Nehru Public School`;
-    const encodedMsg = encodeURIComponent(msg);
-    window.open(`https://wa.me/91${student.mobile}?text=${encodedMsg}`, '_blank');
+    window.open(`https://wa.me/91${student.mobile}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   const totalProjected = students.reduce((acc, s) => acc + (classFees[s.class] || 0), 0);
@@ -303,172 +317,82 @@ export default function App() {
 
   return (
     <div className="app-container">
-      
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-        
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
         h1, h2, h3, .serif-font { font-family: 'Cinzel', serif; }
 
-        .app-container {
-          display: flex;
-          background-color: #0f172a;
-          height: 100vh;
-          color: #f8fafc;
-          overflow: hidden;
-          position: relative;
-        }
+        .app-container { display: flex; background-color: #0f172a; height: 100vh; color: #f8fafc; overflow: hidden; position: relative; }
 
-        /* Overlay Entrance & Auth Modal */
         .info-overlay {
           position: fixed; top: 0; left: 0; width: 100%; height: 100%;
           background: radial-gradient(circle at center, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.98));
-          display: flex; justify-content: center; align-items: center;
-          z-index: 9999; backdrop-filter: blur(12px); padding: 15px;
+          display: flex; justify-content: center; align-items: center; z-index: 9999; backdrop-filter: blur(12px); padding: 15px;
         }
         .info-circular-box {
-          background: linear-gradient(145deg, #1e293b, #0f172a);
-          width: 100%; max-width: 680px; padding: 35px 25px;
-          border: 1px solid rgba(217, 119, 6, 0.4);
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
-          border-radius: 12px; text-align: center; position: relative;
-          max-height: 90vh; overflow-y: auto;
+          background: linear-gradient(145deg, #1e293b, #0f172a); width: 100%; max-width: 680px; padding: 35px 25px;
+          border: 1px solid rgba(217, 119, 6, 0.4); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+          border-radius: 12px; text-align: center; position: relative; max-height: 90vh; overflow-y: auto;
         }
         .lang-toggle-btn {
-          position: absolute; top: 15px; right: 15px;
-          background: linear-gradient(135deg, #d97706, #b45309);
-          color: #fff; border: none; padding: 6px 14px; font-size: 11px;
-          font-weight: 700; cursor: pointer; border-radius: 20px;
+          position: absolute; top: 15px; right: 15px; background: linear-gradient(135deg, #d97706, #b45309);
+          color: #fff; border: none; padding: 6px 14px; font-size: 11px; font-weight: 700; cursor: pointer; border-radius: 20px;
         }
 
         .classic-crest {
-          width: 70px; height: 75px;
-          background: linear-gradient(135deg, #1e293b, #0f172a);
-          border: 2px solid #d97706; border-radius: 0 0 35px 35px;
-          position: relative; display: flex; justify-content: center; align-items: center;
-          box-shadow: 0 0 20px rgba(217, 119, 6, 0.25); margin: 0 auto 15px;
+          width: 70px; height: 75px; background: linear-gradient(135deg, #1e293b, #0f172a);
+          border: 2px solid #d97706; border-radius: 0 0 35px 35px; position: relative;
+          display: flex; justify-content: center; align-items: center; box-shadow: 0 0 20px rgba(217, 119, 6, 0.25); margin: 0 auto 15px;
         }
-        .classic-crest::before {
-          content: "MMXV"; color: #fbbf24; font-size: 11px; font-weight: 800;
-          letter-spacing: 2px; font-family: 'Cinzel', serif;
-        }
+        .classic-crest::before { content: "MMXV"; color: #fbbf24; font-size: 11px; font-weight: 800; letter-spacing: 2px; font-family: 'Cinzel', serif; }
 
-        /* Mobile Header */
-        .mobile-header {
-          display: none;
-          background: #0b1329;
-          padding: 15px 20px;
-          border-bottom: 1px solid rgba(217, 119, 6, 0.2);
-          align-items: center;
-          justify-content: space-between;
-          width: 100%;
-          z-index: 100;
-        }
-        .hamburger-btn {
-          background: transparent;
-          border: none;
-          color: #fbbf24;
-          font-size: 24px;
-          cursor: pointer;
-        }
+        .mobile-header { display: none; background: #0b1329; padding: 15px 20px; border-bottom: 1px solid rgba(217, 119, 6, 0.2); align-items: center; justify-content: space-between; width: 100%; z-index: 100; }
+        .hamburger-btn { background: transparent; border: none; color: #fbbf24; font-size: 24px; cursor: pointer; }
 
-        /* Sidebar Styling */
         .sidebar {
           width: 280px; background: linear-gradient(180deg, #0b1329 0%, #030712 100%);
-          border-right: 1px solid rgba(217, 119, 6, 0.2); padding: 30px 15px;
-          display: flex; flex-direction: column; justify-content: space-between;
-          transition: transform 0.3s ease;
-          z-index: 500;
+          border-right: 1px solid rgba(217, 119, 6, 0.2); padding: 30px 15px; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.3s ease; z-index: 500;
         }
         .sidebar-brand h2 { color: #f8fafc; font-size: 18px; text-align: center; letter-spacing: 1.5px; }
         .sidebar-brand .est-tag { text-align: center; font-size: 10px; color: #fbbf24; letter-spacing: 3px; font-weight: 700; margin-top: 4px; }
         .nav-menu { margin-top: 25px; }
         .nav-item {
-          display: flex; align-items: center; color: #94a3b8; text-decoration: none;
-          padding: 12px 15px; margin-bottom: 6px; border-radius: 8px; font-size: 13px;
-          font-weight: 500; transition: all 0.25s ease; cursor: pointer; border: 1px solid transparent;
+          display: flex; align-items: center; color: #94a3b8; text-decoration: none; padding: 12px 15px; margin-bottom: 6px;
+          border-radius: 8px; font-size: 13px; font-weight: 500; transition: all 0.25s ease; cursor: pointer; border: 1px solid transparent;
         }
-        .nav-item:hover, .nav-item.active {
-          background: linear-gradient(90deg, rgba(217, 119, 6, 0.15), transparent);
-          color: #fbbf24; border-color: rgba(217, 119, 6, 0.3); font-weight: 600;
-        }
+        .nav-item:hover, .nav-item.active { background: linear-gradient(90deg, rgba(217, 119, 6, 0.15), transparent); color: #fbbf24; border-color: rgba(217, 119, 6, 0.3); font-weight: 600; }
 
-        /* User Auth Badge in Sidebar */
-        .auth-badge-box {
-          background: rgba(15, 23, 42, 0.6);
-          border: 1px solid rgba(217, 119, 6, 0.3);
-          padding: 12px; border-radius: 8px; margin-top: 15px; text-align: center;
-        }
-        .btn-auth-action {
-          width: 100%; margin-top: 8px; padding: 6px 10px; font-size: 11px;
-          border-radius: 6px; font-weight: bold; cursor: pointer; border: none;
-        }
+        .auth-badge-box { background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(217, 119, 6, 0.3); padding: 12px; border-radius: 8px; margin-top: 15px; text-align: center; }
+        .btn-auth-action { width: 100%; margin-top: 8px; padding: 6px 10px; font-size: 11px; border-radius: 6px; font-weight: bold; cursor: pointer; border: none; }
         .btn-auth-in { background: #d97706; color: #fff; }
         .btn-auth-out { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
 
-        /* Main Container */
-        .main-wrapper {
-          flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden;
-        }
-        .main-content {
-          flex: 1; padding: 30px; overflow-y: auto; background: #090d16;
-        }
-        .header-bar {
-          display: flex; justify-content: space-between; align-items: center;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 15px; margin-bottom: 25px;
-          flex-wrap: wrap; gap: 15px;
-        }
+        .main-wrapper { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .main-content { flex: 1; padding: 30px; overflow-y: auto; background: #090d16; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 15px; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
         .header-bar h1 { font-size: 24px; color: #f8fafc; letter-spacing: 1px; }
 
-        .live-clock-badge {
-          background: linear-gradient(135deg, rgba(30, 41, 59, 0.6), rgba(15, 23, 42, 0.8));
-          border: 1px solid rgba(217, 119, 6, 0.4); padding: 8px 18px; border-radius: 30px;
-          text-align: right; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        }
+        .live-clock-badge { background: linear-gradient(135deg, rgba(30, 41, 59, 0.6), rgba(15, 23, 42, 0.8)); border: 1px solid rgba(217, 119, 6, 0.4); padding: 8px 18px; border-radius: 30px; text-align: right; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
         .live-clock-badge .date { font-size: 13px; font-weight: 700; color: #fbbf24; }
         .live-clock-badge .day { font-size: 9px; color: #94a3b8; letter-spacing: 2px; text-transform: uppercase; }
 
-        /* Responsive Layout Grids */
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
-        .stat-card {
-          background: linear-gradient(145deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.9));
-          border: 1px solid rgba(255, 255, 255, 0.08); padding: 18px; border-radius: 10px;
-        }
+        .stat-card { background: linear-gradient(145deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.9)); border: 1px solid rgba(255, 255, 255, 0.08); padding: 18px; border-radius: 10px; }
         .stat-card h4 { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 8px; }
         .stat-card .val { font-size: 22px; font-weight: 700; color: #f8fafc; }
 
         .grid-2col { display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px; }
-
-        .glass-box {
-          background: linear-gradient(145deg, rgba(30, 41, 59, 0.5), rgba(15, 23, 42, 0.7));
-          border: 1px solid rgba(255, 255, 255, 0.08); padding: 20px; border-radius: 12px;
-          margin-bottom: 20px;
-        }
+        .glass-box { background: linear-gradient(145deg, rgba(30, 41, 59, 0.5), rgba(15, 23, 42, 0.7)); border: 1px solid rgba(255, 255, 255, 0.08); padding: 20px; border-radius: 12px; margin-bottom: 20px; }
         .glass-box h3 { color: #fbbf24; font-size: 16px; margin-bottom: 15px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 8px; }
 
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; margin-bottom: 5px; }
-        .form-group input, .form-group select {
-          width: 100%; background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255, 255, 255, 0.15);
-          padding: 10px 12px; border-radius: 6px; color: #fff; font-size: 13px; outline: none;
-        }
+        .form-group input, .form-group select { width: 100%; background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255, 255, 255, 0.15); padding: 10px 12px; border-radius: 6px; color: #fff; font-size: 13px; outline: none; }
 
-        .btn-gold {
-          background: linear-gradient(135deg, #d97706, #b45309); color: #fff; border: none;
-          padding: 10px 18px; border-radius: 6px; font-weight: 700; letter-spacing: 1px;
-          text-transform: uppercase; font-size: 11px; cursor: pointer; width: 100%;
-        }
-        .btn-sheet {
-          background: linear-gradient(135deg, #059669, #047857); color: #fff; border: none;
-          padding: 8px 14px; border-radius: 6px; font-weight: 700; font-size: 11px; cursor: pointer;
-        }
+        .btn-gold { background: linear-gradient(135deg, #d97706, #b45309); color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; font-size: 11px; cursor: pointer; width: 100%; }
+        .btn-sheet { background: linear-gradient(135deg, #059669, #047857); color: #fff; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 700; font-size: 11px; cursor: pointer; }
 
-        /* Responsive Table Wrapper */
-        .table-responsive {
-          width: 100%;
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
-        }
+        .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
         table { width: 100%; border-collapse: collapse; white-space: nowrap; }
         th { background: rgba(15, 23, 42, 0.9); color: #fbbf24; font-size: 10px; text-transform: uppercase; padding: 10px; border-bottom: 2px solid rgba(217, 119, 6, 0.3); text-align: left; }
         td { padding: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 12px; color: #e2e8f0; }
@@ -482,28 +406,13 @@ export default function App() {
         .btn-action { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; }
         .btn-wa { background: rgba(13, 148, 136, 0.3); color: #2dd4bf; border: 1px solid rgba(45, 212, 191, 0.3); padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; }
 
-        .sidebar-backdrop {
-          display: none;
-          position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-          background: rgba(0, 0, 0, 0.6); z-index: 400; backdrop-filter: blur(3px);
-        }
+        .sidebar-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); z-index: 400; backdrop-filter: blur(3px); }
+        .auth-tab-btn { background: transparent; border: none; color: #94a3b8; padding: 8px 12px; font-weight: 600; font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent; }
+        .auth-tab-btn.active { color: #fbbf24; border-bottom: 2px solid #d97706; }
 
-        /* Auth Mode Switcher */
-        .auth-tab-btn {
-          background: transparent; border: none; color: #94a3b8; padding: 8px 16px;
-          font-weight: 600; font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent;
-        }
-        .auth-tab-btn.active {
-          color: #fbbf24; border-bottom: 2px solid #d97706;
-        }
-
-        /* MEDIA QUERIES FOR MOBILE & TABLET */
         @media (max-width: 900px) {
           .mobile-header { display: flex; }
-          .sidebar {
-            position: fixed; top: 0; left: 0; height: 100%;
-            transform: translateX(-100%);
-          }
+          .sidebar { position: fixed; top: 0; left: 0; height: 100%; transform: translateX(-100%); }
           .sidebar.open { transform: translateX(0); }
           .sidebar-backdrop.open { display: block; }
           .grid-2col { grid-template-columns: 1fr; }
@@ -537,7 +446,7 @@ export default function App() {
         </div>
       )}
 
-      {/* SIGN IN / SIGN UP AUTH MODAL */}
+      {/* AUTH MODAL (LOGIN, SIGNUP & FORGOT OTP) */}
       {showAuthModal && (
         <div className="info-overlay" style={{ zIndex: 10000 }}>
           <div className="info-circular-box" style={{ maxWidth: '420px', textAlign: 'left' }}>
@@ -549,20 +458,11 @@ export default function App() {
             </button>
             <div className="classic-crest" style={{ margin: '0 auto 10px' }}></div>
             
-            {/* Modal Tabs for Login vs Signup */}
+            {/* Modal Navigation Tabs */}
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-              <button 
-                className={`auth-tab-btn ${authMode === 'login' ? 'active' : ''}`}
-                onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
-              >
-                Log In
-              </button>
-              <button 
-                className={`auth-tab-btn ${authMode === 'signup' ? 'active' : ''}`}
-                onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccess(''); }}
-              >
-                Sign Up (Create Account)
-              </button>
+              <button className={`auth-tab-btn ${authMode === 'login' ? 'active' : ''}`} onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}>Log In</button>
+              <button className={`auth-tab-btn ${authMode === 'signup' ? 'active' : ''}`} onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccess(''); }}>Sign Up</button>
+              <button className={`auth-tab-btn ${authMode === 'forgot' || authMode === 'verify_otp' ? 'active' : ''}`} onClick={() => { setAuthMode('forgot'); setAuthError(''); setAuthSuccess(''); }}>Forgot Password</button>
             </div>
             
             {authError && (
@@ -577,52 +477,75 @@ export default function App() {
               </div>
             )}
 
-            <form onSubmit={handleAuthSubmit}>
-              <div className="form-group">
-                <label>User ID / Username</label>
-                <input 
-                  type="text" 
-                  required 
-                  placeholder={authMode === 'login' ? "admin या आपका यूज़रनेम" : "नया यूज़रनेम लिखें"}
-                  value={authCredentials.username} 
-                  onChange={(e) => setAuthCredentials({ ...authCredentials, username: e.target.value })} 
-                />
-              </div>
-              
-              <div className="form-group">
-                <label>Password</label>
-                <input 
-                  type="password" 
-                  required 
-                  placeholder="पासवर्ड लिखें"
-                  value={authCredentials.password} 
-                  onChange={(e) => setAuthCredentials({ ...authCredentials, password: e.target.value })} 
-                />
-              </div>
-
-              {authMode === 'signup' && (
+            {/* FORM 1: LOGIN / SIGNUP */}
+            {(authMode === 'login' || authMode === 'signup') && (
+              <form onSubmit={handleAuthSubmit}>
                 <div className="form-group">
-                  <label>Confirm Password</label>
-                  <input 
-                    type="password" 
-                    required 
-                    placeholder="पासवर्ड दोबारा लिखें"
-                    value={authCredentials.confirmPassword} 
-                    onChange={(e) => setAuthCredentials({ ...authCredentials, confirmPassword: e.target.value })} 
-                  />
+                  <label>Username</label>
+                  <input type="text" required placeholder="यूजरनेम दर्ज करें" value={authCredentials.username} onChange={(e) => setAuthCredentials({ ...authCredentials, username: e.target.value })} />
                 </div>
-              )}
+                
+                {authMode === 'signup' && (
+                  <div className="form-group">
+                    <label>Mobile Number (10 Digits)</label>
+                    <input type="number" required placeholder="10-अंकों का मोबाइल नंबर" value={authCredentials.mobile} onChange={(e) => setAuthCredentials({ ...authCredentials, mobile: e.target.value })} />
+                  </div>
+                )}
 
-              <button type="submit" className="btn-gold" style={{ marginTop: '10px' }}>
-                {authMode === 'login' ? 'Log In' : 'Create Account'}
-              </button>
-            </form>
+                <div className="form-group">
+                  <label>Password</label>
+                  <input type="password" required placeholder="पासवर्ड लिखें" value={authCredentials.password} onChange={(e) => setAuthCredentials({ ...authCredentials, password: e.target.value })} />
+                </div>
+
+                {authMode === 'signup' && (
+                  <div className="form-group">
+                    <label>Confirm Password</label>
+                    <input type="password" required placeholder="पासवर्ड दोबारा दर्ज करें" value={authCredentials.confirmPassword} onChange={(e) => setAuthCredentials({ ...authCredentials, confirmPassword: e.target.value })} />
+                  </div>
+                )}
+
+                <button type="submit" className="btn-gold" style={{ marginTop: '10px' }}>
+                  {authMode === 'login' ? 'Log In' : 'Create Account'}
+                </button>
+              </form>
+            )}
+
+            {/* FORM 2: FORGOT PASSWORD (REQUEST OTP) */}
+            {authMode === 'forgot' && (
+              <form onSubmit={handleSendOtp}>
+                <div className="form-group">
+                  <label>Registered Username</label>
+                  <input type="text" required placeholder="अपना यूज़रनेम लिखें" value={authCredentials.username} onChange={(e) => setAuthCredentials({ ...authCredentials, username: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Registered Mobile Number</label>
+                  <input type="number" required placeholder="10 अंकों का मोबाइल नंबर" value={authCredentials.mobile} onChange={(e) => setAuthCredentials({ ...authCredentials, mobile: e.target.value })} />
+                </div>
+                <button type="submit" className="btn-gold" style={{ marginTop: '10px' }}>Send OTP</button>
+              </form>
+            )}
+
+            {/* FORM 3: VERIFY OTP & RESET PASSWORD */}
+            {authMode === 'verify_otp' && (
+              <form onSubmit={handleResetPassword}>
+                <div className="form-group">
+                  <label>Enter 6-Digit OTP</label>
+                  <input type="number" required placeholder="OTP यहाँ दर्ज करें" value={authCredentials.otp} onChange={(e) => setAuthCredentials({ ...authCredentials, otp: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>New Password</label>
+                  <input type="password" required placeholder="नया पासवर्ड लिखें" value={authCredentials.newPassword} onChange={(e) => setAuthCredentials({ ...authCredentials, newPassword: e.target.value })} />
+                </div>
+                <button type="submit" className="btn-gold" style={{ marginTop: '10px' }}>Reset Password</button>
+              </form>
+            )}
 
             <div style={{ marginTop: '15px', textAlign: 'center', fontSize: '11px', color: '#94a3b8' }}>
-              {authMode === 'login' ? (
-                <>नया अकाउंट बनाना चाहते हैं? <span style={{ color: '#fbbf24', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { setAuthMode('signup'); setAuthError(''); }}>Sign Up करें</span></>
-              ) : (
-                <>पहले से अकाउंट है? <span style={{ color: '#fbbf24', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log In करें</span></>
+              {authMode === 'login' && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#fbbf24', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { setAuthMode('signup'); setAuthError(''); }}>Sign Up</span>
+                  <span style={{ color: '#f87171', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { setAuthMode('forgot'); setAuthError(''); }}>Forgot Password?</span>
+                </div>
               )}
             </div>
           </div>
@@ -641,7 +564,6 @@ export default function App() {
             <div className="est-tag">ESTABLISHED 2015</div>
           </div>
 
-          {/* SIGN IN STATUS BADGE */}
           <div className="auth-badge-box">
             <div style={{ fontSize: '11px', color: '#cbd5e1' }}>
               Status: <span style={{ color: isLoggedIn ? '#4ade80' : '#f87171', fontWeight: 'bold' }}>
@@ -666,13 +588,12 @@ export default function App() {
         </div>
 
         <div style={{ fontSize: '10px', color: '#475569', textAlign: 'center', marginTop: '20px' }}>
-          ENTERPRISE V5.0 (DYNAMIC AUTH)
+          ENTERPRISE V6.0 (OTP AUTH)
         </div>
       </div>
 
       {/* MAIN WRAPPER */}
       <div className="main-wrapper">
-        {/* MOBILE HEADER */}
         <div className="mobile-header">
           <button className="hamburger-btn" onClick={() => setIsSidebarOpen(true)}>☰</button>
           <div className="serif-font" style={{ color: '#fbbf24', fontWeight: 'bold' }}>NEHRU PUBLIC SCHOOL</div>
@@ -683,7 +604,6 @@ export default function App() {
           )}
         </div>
 
-        {/* MAIN CONTENT */}
         <div className="main-content">
           <div className="header-bar">
             <h1 className="serif-font">
@@ -700,7 +620,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* TAB 1: DASHBOARD */}
+          {/* DASHBOARD TAB */}
           {activeTab === 'dashboard' && (
             <div>
               <div className="stats-grid">
@@ -729,13 +649,7 @@ export default function App() {
                 <div className="table-responsive">
                   <table>
                     <thead>
-                      <tr>
-                        <th>Rank</th>
-                        <th>Name</th>
-                        <th>Board</th>
-                        <th>Class</th>
-                        <th>Percentage</th>
-                      </tr>
+                      <tr><th>Rank</th><th>Name</th><th>Board</th><th>Class</th><th>Percentage</th></tr>
                     </thead>
                     <tbody>
                       {toppers.map((t, idx) => (
@@ -756,52 +670,20 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 2: STUDENTS REGISTER */}
+          {/* STUDENTS TAB */}
           {activeTab === 'students' && (
             <div className="grid-2col">
               <div className="glass-box">
                 <h3>Student Enrollment</h3>
                 <form onSubmit={handleAddStudent}>
-                  <div className="form-group">
-                    <label>Full Name</label>
-                    <input type="text" required value={studentForm.name} onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Father's Name</label>
-                    <input type="text" required value={studentForm.father} onChange={(e) => setStudentForm({ ...studentForm, father: e.target.value })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Mobile</label>
-                    <input type="number" required value={studentForm.mobile} onChange={(e) => setStudentForm({ ...studentForm, mobile: e.target.value })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Board</label>
-                    <select value={studentForm.board} onChange={(e) => setStudentForm({ ...studentForm, board: e.target.value })}>
-                      <option value="CBSE">CBSE</option>
-                      <option value="MPBSE">MPBSE</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Class</label>
-                    <select value={studentForm.class} onChange={(e) => setStudentForm({ ...studentForm, class: e.target.value })}>
-                      {Object.keys(classFees).map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Roll Number</label>
-                    <input type="number" required value={studentForm.roll} onChange={(e) => setStudentForm({ ...studentForm, roll: e.target.value })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Percentage</label>
-                    <input type="text" value={studentForm.percentage} onChange={(e) => setStudentForm({ ...studentForm, percentage: e.target.value })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Fees Status</label>
-                    <select value={studentForm.feeStatus} onChange={(e) => setStudentForm({ ...studentForm, feeStatus: e.target.value })}>
-                      <option value="Unpaid">Unpaid</option>
-                      <option value="Paid">Paid</option>
-                    </select>
-                  </div>
+                  <div className="form-group"><label>Full Name</label><input type="text" required value={studentForm.name} onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })} /></div>
+                  <div className="form-group"><label>Father's Name</label><input type="text" required value={studentForm.father} onChange={(e) => setStudentForm({ ...studentForm, father: e.target.value })} /></div>
+                  <div className="form-group"><label>Mobile</label><input type="number" required value={studentForm.mobile} onChange={(e) => setStudentForm({ ...studentForm, mobile: e.target.value })} /></div>
+                  <div className="form-group"><label>Board</label><select value={studentForm.board} onChange={(e) => setStudentForm({ ...studentForm, board: e.target.value })}><option value="CBSE">CBSE</option><option value="MPBSE">MPBSE</option></select></div>
+                  <div className="form-group"><label>Class</label><select value={studentForm.class} onChange={(e) => setStudentForm({ ...studentForm, class: e.target.value })}>{Object.keys(classFees).map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                  <div className="form-group"><label>Roll Number</label><input type="number" required value={studentForm.roll} onChange={(e) => setStudentForm({ ...studentForm, roll: e.target.value })} /></div>
+                  <div className="form-group"><label>Percentage</label><input type="text" value={studentForm.percentage} onChange={(e) => setStudentForm({ ...studentForm, percentage: e.target.value })} /></div>
+                  <div className="form-group"><label>Fees Status</label><select value={studentForm.feeStatus} onChange={(e) => setStudentForm({ ...studentForm, feeStatus: e.target.value })}><option value="Unpaid">Unpaid</option><option value="Paid">Paid</option></select></div>
                   <button type="submit" className="btn-gold">Register Student</button>
                 </form>
               </div>
@@ -809,32 +691,18 @@ export default function App() {
               <div className="glass-box">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
                   <h3 style={{ margin: 0, border: 'none' }}>Student Directory</h3>
-                  <button className="btn-sheet" onClick={syncToGoogleSheet} disabled={isSyncing}>
-                    {isSyncing ? "Syncing..." : "📊 Sync to Sheet"}
-                  </button>
+                  <button className="btn-sheet" onClick={syncToGoogleSheet} disabled={isSyncing}>{isSyncing ? "Syncing..." : "📊 Sync to Sheet"}</button>
                 </div>
                 <div className="table-responsive">
                   <table>
-                    <thead>
-                      <tr>
-                        <th>Roll</th>
-                        <th>Name</th>
-                        <th>Class</th>
-                        <th>Fees</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
+                    <thead><tr><th>Roll</th><th>Name</th><th>Class</th><th>Fees</th><th>Action</th></tr></thead>
                     <tbody>
                       {students.map((s, idx) => (
                         <tr key={idx}>
                           <td>#{s.roll}</td>
                           <td><strong>{s.name}</strong><br/><span style={{ fontSize: '10px', color: '#94a3b8' }}>{s.mobile}</span></td>
                           <td>{s.class}</td>
-                          <td>
-                            <span className={`badge ${s.feeStatus === 'Paid' ? 'badge-success' : 'badge-danger'}`} style={{ cursor: 'pointer' }} onClick={() => toggleFeeStatus(idx)}>
-                              {s.feeStatus}
-                            </span>
-                          </td>
+                          <td><span className={`badge ${s.feeStatus === 'Paid' ? 'badge-success' : 'badge-danger'}`} style={{ cursor: 'pointer' }} onClick={() => toggleFeeStatus(idx)}>{s.feeStatus}</span></td>
                           <td><button className="btn-action" onClick={() => deleteStudent(idx)}>Delete</button></td>
                         </tr>
                       ))}
@@ -845,24 +713,15 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 3: TEACHERS */}
+          {/* TEACHERS TAB */}
           {activeTab === 'teachers' && (
             <div className="grid-2col">
               <div className="glass-box">
                 <h3>Appoint Faculty</h3>
                 <form onSubmit={handleAddTeacher}>
-                  <div className="form-group">
-                    <label>Teacher Name</label>
-                    <input type="text" required value={teacherForm.name} onChange={(e) => setTeacherForm({ ...teacherForm, name: e.target.value })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Department</label>
-                    <input type="text" required value={teacherForm.dept} onChange={(e) => setTeacherForm({ ...teacherForm, dept: e.target.value })} />
-                  </div>
-                  <div className="form-group">
-                    <label>Salary (₹)</label>
-                    <input type="number" required value={teacherForm.salary} onChange={(e) => setTeacherForm({ ...teacherForm, salary: e.target.value })} />
-                  </div>
+                  <div className="form-group"><label>Teacher Name</label><input type="text" required value={teacherForm.name} onChange={(e) => setTeacherForm({ ...teacherForm, name: e.target.value })} /></div>
+                  <div className="form-group"><label>Department</label><input type="text" required value={teacherForm.dept} onChange={(e) => setTeacherForm({ ...teacherForm, dept: e.target.value })} /></div>
+                  <div className="form-group"><label>Salary (₹)</label><input type="number" required value={teacherForm.salary} onChange={(e) => setTeacherForm({ ...teacherForm, salary: e.target.value })} /></div>
                   <button type="submit" className="btn-gold">Appoint Teacher</button>
                 </form>
               </div>
@@ -871,24 +730,13 @@ export default function App() {
                 <h3>Faculty List</h3>
                 <div className="table-responsive">
                   <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Dept</th>
-                        <th>Attendance</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
+                    <thead><tr><th>Name</th><th>Dept</th><th>Attendance</th><th>Action</th></tr></thead>
                     <tbody>
                       {teachers.map((t, idx) => (
                         <tr key={idx}>
                           <td><strong>{t.name}</strong></td>
                           <td>{t.dept}</td>
-                          <td>
-                            <span className={`badge ${t.present ? 'badge-success' : 'badge-danger'}`} style={{ cursor: 'pointer' }} onClick={() => toggleTeacherAttendance(idx)}>
-                              {t.present ? 'Present' : 'Absent'}
-                            </span>
-                          </td>
+                          <td><span className={`badge ${t.present ? 'badge-success' : 'badge-danger'}`} style={{ cursor: 'pointer' }} onClick={() => toggleTeacherAttendance(idx)}>{t.present ? 'Present' : 'Absent'}</span></td>
                           <td><button className="btn-action" onClick={() => deleteTeacher(idx)}>Remove</button></td>
                         </tr>
                       ))}
@@ -899,22 +747,13 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 4: DISPATCH CENTER */}
+          {/* DISPATCH CENTER */}
           {activeTab === 'dispatch-center' && (
             <div className="glass-box">
               <h3>📨 WhatsApp Marksheet Dispatch</h3>
               <div className="table-responsive">
                 <table>
-                  <thead>
-                    <tr>
-                      <th>Roll</th>
-                      <th>Student Name</th>
-                      <th>Class</th>
-                      <th>Score</th>
-                      <th>Parent Mobile</th>
-                      <th>Dispatch</th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Roll</th><th>Student Name</th><th>Class</th><th>Score</th><th>Parent Mobile</th><th>Dispatch</th></tr></thead>
                   <tbody>
                     {students.map((s, idx) => (
                       <tr key={idx}>
@@ -923,11 +762,7 @@ export default function App() {
                         <td>{s.class}</td>
                         <td><strong style={{ color: '#4ade80' }}>{s.percentage}</strong></td>
                         <td>{s.mobile}</td>
-                        <td>
-                          <button className="btn-wa" onClick={() => sendWhatsAppResult(s)}>
-                            📲 Send WhatsApp
-                          </button>
-                        </td>
+                        <td><button className="btn-wa" onClick={() => sendWhatsAppResult(s)}>📲 Send WhatsApp</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -936,48 +771,28 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 5: FINANCE LEDGER */}
+          {/* FINANCE TAB */}
           {activeTab === 'finance' && (
             <div className="glass-box">
               <h3>💰 Financial Accounts Ledger</h3>
               <div className="stats-grid" style={{ marginBottom: '20px' }}>
-                <div className="stat-card">
-                  <h4>Total Tuition Fees Collected</h4>
-                  <div className="val" style={{ color: '#4ade80' }}>₹{totalCollected.toLocaleString('en-IN')}</div>
-                </div>
-                <div className="stat-card">
-                  <h4>Total Faculty Salary Outflow</h4>
-                  <div className="val" style={{ color: '#f87171' }}>₹{totalSalaries.toLocaleString('en-IN')}</div>
-                </div>
-                <div className="stat-card">
-                  <h4>Net Administrative Reserve</h4>
-                  <div className="val" style={{ color: netPL >= 0 ? '#4ade80' : '#f87171' }}>
-                    ₹{netPL.toLocaleString('en-IN')}
-                  </div>
-                </div>
+                <div className="stat-card"><h4>Total Tuition Fees Collected</h4><div className="val" style={{ color: '#4ade80' }}>₹{totalCollected.toLocaleString('en-IN')}</div></div>
+                <div className="stat-card"><h4>Total Faculty Salary Outflow</h4><div className="val" style={{ color: '#f87171' }}>₹{totalSalaries.toLocaleString('en-IN')}</div></div>
+                <div className="stat-card"><h4>Net Administrative Reserve</h4><div className="val" style={{ color: netPL >= 0 ? '#4ade80' : '#f87171' }}>₹{netPL.toLocaleString('en-IN')}</div></div>
               </div>
             </div>
           )}
 
-          {/* TAB 6: FEES CONFIGURATION */}
+          {/* FEES TAB */}
           {activeTab === 'fees' && (
             <div className="glass-box">
               <h3>⚙️ Annual Fee Structure Configuration</h3>
-              {!isLoggedIn && (
-                <div style={{ color: '#f87171', fontSize: '12px', marginBottom: '15px' }}>
-                  ⚠️ फीस की जानकारी बदलने के लिए कृपया लॉगिन करें!
-                </div>
-              )}
+              {!isLoggedIn && <div style={{ color: '#f87171', fontSize: '12px', marginBottom: '15px' }}>⚠️ फीस बदलने के लिए लॉगिन करें!</div>}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
                 {Object.keys(classFees).map((cls) => (
                   <div className="form-group" key={cls} style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
                     <label>{cls}</label>
-                    <input
-                      type="number"
-                      disabled={!isLoggedIn}
-                      value={classFees[cls]}
-                      onChange={(e) => handleFeeChange(cls, e.target.value)}
-                    />
+                    <input type="number" disabled={!isLoggedIn} value={classFees[cls]} onChange={(e) => handleFeeChange(cls, e.target.value)} />
                   </div>
                 ))}
               </div>
